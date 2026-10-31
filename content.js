@@ -1,7 +1,7 @@
 /* DeltaCapture
  * Captures the DeltaMath student problem-log card (student name, skill, date,
  * solve time, result icon, problem, explanation and "Your Solution" section)
- * as a 2x PNG. Adds two buttons left of the pagination "Prev" button:
+ * as a high-res (3x) raster PNG. Adds two buttons left of the pagination "Prev" button:
  *   [Copy]  -> image to clipboard
  *   [PNG]   -> image downloaded with an auto-generated filename
  *
@@ -23,6 +23,11 @@
   const SEL_HEADER_INFO = '.problem-header > div';
   const SEL_RESULT_ICON = '.problem-header-symbol .fa, .problem-header-symbol i, .problem-header-symbol svg, .problem-header-symbol span';
   const SEL_SOL_LABEL = '.yoursolution-label';
+
+  /** Output pixels per CSS pixel. 3x = comfortable on 4K screens and print/PDF.
+   *  Must be set via `width` (absolute output size) — `scale` interacts with the
+   *  device pixel ratio and can normalize the export back to 1:1 CSS size. */
+  const EXPORT_SCALE = 3;
   const MONTHS = (m) =>
     ({ jan: 'Jan', feb: 'Feb', mar: 'Mar', apr: 'Apr', may: 'May', jun: 'Jun',
        jul: 'Jul', aug: 'Aug', sep: 'Sep', oct: 'Oct', nov: 'Nov', dec: 'Dec' }[m] || null);
@@ -251,15 +256,41 @@
 
   // ------------------------------------------------------------- capture
 
+  /** Render the card to a TRUE raster PNG:
+   *  capture -> explicit-size canvas -> canvas.toBlob('image/png').
+   *  (SnapDOM's plain toBlob() defaults to its SVG artifact on the default
+   *  engine, which produces an XML file — never use it blindly.) */
   async function captureCard(card) {
-    if (!window.snapdom || typeof window.snapdom.toBlob !== 'function') {
+    if (!window.snapdom || typeof window.snapdom.toCanvas !== 'function') {
       throw new Error('SnapDOM renderer not available');
     }
-    return window.snapdom.toBlob(card, {
-      scale: 2,
+    const rect = card.getBoundingClientRect();
+    const cssW = Math.max(50, Math.round(rect.width));
+    const cssH = Math.max(50, Math.round(rect.height));
+    const targetW = Math.min(cssW * EXPORT_SCALE, 8000);
+    const targetH = Math.max(1, Math.round(targetW * cssH / cssW));
+
+    const raster = await window.snapdom.toCanvas(card, {
+      width: targetW, // absolute output size wins over scale/dpr semantics
       backgroundColor: '#ffffff',
       embedFonts: 'auto',
     });
+
+    let out = raster;
+    if (raster.width !== targetW || Math.abs(raster.height - targetH) > Math.max(2, targetH * 0.01)) {
+      // Belt & braces: normalize onto our own canvas if the exporter deviated.
+      out = document.createElement('canvas');
+      out.width = targetW;
+      out.height = targetH;
+      const ctx = out.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.drawImage(raster, 0, 0, out.width, out.height);
+    }
+
+    const blob = await new Promise((resolve, reject) =>
+      out.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG encode failed'))), 'image/png'));
+    return blob;
   }
 
   function downloadBlob(blob, filename) {
@@ -286,7 +317,7 @@
     b.innerHTML = `${icon}<span class="deltacapture-label">${label}</span>`;
     b.disabled = false;
     b.title = id === PNG_BTN_ID
-      ? 'Download this problem card as a 2x PNG'
+      ? 'Download this problem card as a high-res (3x) PNG'
       : 'Copy this problem card as an image to the clipboard';
     return b;
   }

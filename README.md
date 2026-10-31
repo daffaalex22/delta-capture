@@ -8,7 +8,7 @@ It injects two small buttons to the left of the pagination `◀ Prev` button:
 | Button | Action |
 |--------|--------|
 | **Copy** | Copies the whole problem card to the clipboard as an image — paste straight into a doc/email. |
-| **PNG** | Downloads the card as a crisp **2× PNG** with an auto-generated filename. |
+| **PNG** | Downloads the card as a crisp **3× true raster PNG** with an auto-generated filename. |
 
 Everything happens **locally in your browser** — nothing is transmitted, stored, or collected.
 
@@ -17,7 +17,9 @@ Everything happens **locally in your browser** — nothing is transmitted, store
 The entire white problem card: student name, skill, date, solve time, the ✓/✗
 result icon, the problem + diagram, DeltaMath's explanation, and the
 "Your Solution" section. Card bounds only — no page chrome, no shadows,
-white background.
+white background. Output is a genuine raster PNG encoded in-page
+(`canvas.toBlob('image/png')`) — safe for all converters (PNG→PDF, etc.).
+The render size is set explicitly (`width`), so it's the same on any monitor.
 
 ## Filenames
 
