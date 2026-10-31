@@ -31,6 +31,7 @@
   /* ---------------------------------------------------------------- state */
 
   const selected = new Set(); // tbody row indices on the current page (0-based)
+  let anchorIdx = null;       // last checkbox clicked WITHOUT Shift (range anchor)
   let running = false;
   let aborted = false;
   let lastRowsSignature = ''; // clears the selection if the visible rows change
@@ -120,6 +121,30 @@
     headerTr.insertBefore(th, headerTr.firstChild);
   }
 
+  /** Shared toggle for checkbox clicks and whole-cell clicks.
+   *  For checkbox clicks the DOM has ALREADY flipped cb.checked, so `on`
+   *  is the checkbox's resulting state. With Shift held, every row between
+   *  the anchor and this one is set to `on` (Sheets/Gmail convention —
+   *  Shift+clicking a checked box also un-checks the range). */
+  function applyToggle(idx, on, shiftKey) {
+    if (idx < 0) return;
+    if (shiftKey && anchorIdx !== null && anchorIdx !== idx) {
+      const lo = Math.min(anchorIdx, idx);
+      const hi = Math.max(anchorIdx, idx);
+      for (let i = lo; i <= hi; i++) {
+        if (on) selected.add(i);
+        else selected.delete(i);
+      }
+      anchorIdx = null; // range consumed; next plain click re-anchors
+    } else {
+      if (on) selected.add(idx);
+      else selected.delete(idx);
+      anchorIdx = idx; // new anchor for the next Shift+click
+    }
+    paintRows();
+    updateBar();
+  }
+
   function ensureRowTd(tr) {
     let td = tr.querySelector('td.deltacapture-batch-col');
     if (!td) {
@@ -132,9 +157,19 @@
       cb.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const idx = dataRows().indexOf(tr);
-        if (idx >= 0) (cb.checked ? selected.add(idx) : selected.delete(idx));
-        paintRows();
-        updateBar();
+        if (idx < 0) return;
+        applyToggle(idx, cb.checked, ev.shiftKey);
+      });
+      // Whole-cell clicks (padding around the 15px box) count too.
+      td.addEventListener('click', (ev) => {
+        if (ev.target !== td) return; // the checkbox handles its own event
+        ev.stopPropagation();
+        const idx = dataRows().indexOf(tr);
+        if (idx < 0) return;
+        const cb = td.querySelector('input.deltacapture-batch-checkbox');
+        if (!cb) return;
+        cb.checked = !cb.checked;
+        applyToggle(idx, cb.checked, ev.shiftKey);
       });
       td.appendChild(cb);
       tr.insertBefore(td, tr.firstChild);

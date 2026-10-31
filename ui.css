@@ -59,6 +59,8 @@ button.deltacapture-btn.deltacapture-busy {
   white-space: nowrap;
 }
 
+#log-table td.deltacapture-batch-col { cursor: pointer; }
+
 .deltacapture-batch-checkbox {
   width: 15px;
   height: 15px;

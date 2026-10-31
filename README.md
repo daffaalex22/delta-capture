@@ -30,7 +30,9 @@ On `/app/teacher/data/logs` each row gets a **Sel checkbox** (plus select-all
 in the header) and a floating bar appears once rows are selected:
 
 1. Tick the rows you want (all on the current page — URLs change instantly,
-   no page reloads).
+   no page reloads). Shift+click checks (or un-checks) the whole range
+   between the anchor checkbox and the clicked one, Sheets-style; clicking
+   the cell around the checkbox works too.
 2. Click **⤓ PDF (N)**.
 3. The extension walks the selection with in-tab Angular routing:
    click View → wait for the card → rasterize (2×) → `history.back()` → next.
