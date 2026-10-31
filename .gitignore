@@ -1,0 +1,11 @@
+# Build artifacts
+dist/
+*.zip
+
+# Debug captures contain REAL student data — never commit
+debug/
+
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store
