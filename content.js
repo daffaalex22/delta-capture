@@ -256,18 +256,17 @@
 
   // ------------------------------------------------------------- capture
 
-  /** Render the card to a TRUE raster PNG:
-   *  capture -> explicit-size canvas -> canvas.toBlob('image/png').
+  /** Render the card with SnapDOM onto a True-raster canvas.
    *  (SnapDOM's plain toBlob() defaults to its SVG artifact on the default
    *  engine, which produces an XML file — never use it blindly.) */
-  async function captureCard(card) {
+  async function rasterizeCard(card, scale = EXPORT_SCALE) {
     if (!window.snapdom || typeof window.snapdom.toCanvas !== 'function') {
       throw new Error('SnapDOM renderer not available');
     }
     const rect = card.getBoundingClientRect();
     const cssW = Math.max(50, Math.round(rect.width));
     const cssH = Math.max(50, Math.round(rect.height));
-    const targetW = Math.min(cssW * EXPORT_SCALE, 8000);
+    const targetW = Math.min(Math.round(cssW * scale), 8000);
     const targetH = Math.max(1, Math.round(targetW * cssH / cssW));
 
     const raster = await window.snapdom.toCanvas(card, {
@@ -287,7 +286,12 @@
       ctx.fillRect(0, 0, out.width, out.height);
       ctx.drawImage(raster, 0, 0, out.width, out.height);
     }
+    return out;
+  }
 
+  /** TRUE raster PNG blob (the PNG / Copy button path). */
+  async function captureCard(card, scale = EXPORT_SCALE) {
+    const out = await rasterizeCard(card, scale);
     const blob = await new Promise((resolve, reject) =>
       out.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG encode failed'))), 'image/png'));
     return blob;
@@ -485,4 +489,18 @@
   }
 
   start();
+
+  // Cross-script hook: batch.js loads in the same isolated world and imports
+  // the proven capture pipeline instead of duplicating it.
+  try {
+    window.__DeltaCaptureApi = {
+      findCard,
+      rasterizeCard,
+      captureCard,
+      headerLines,
+      detectResult,
+      toast,
+      EXPORT_SCALE,
+    };
+  } catch (err) { /* hook is best-effort */ }
 })();

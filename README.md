@@ -10,6 +10,9 @@ It injects two small buttons to the left of the pagination `◀ Prev` button:
 | **Copy** | Copies the whole problem card to the clipboard as an image — paste straight into a doc/email. |
 | **PNG** | Downloads the card as a crisp **3× true raster PNG** with an auto-generated filename. |
 
+On the **Student Problem Logs list page** (`/app/teacher/data/logs`) there's a
+second feature: **Batch → single PDF** (see below).
+
 Everything happens **locally in your browser** — nothing is transmitted, stored, or collected.
 
 ## What gets captured
@@ -20,6 +23,30 @@ result icon, the problem + diagram, DeltaMath's explanation, and the
 white background. Output is a genuine raster PNG encoded in-page
 (`canvas.toBlob('image/png')`) — safe for all converters (PNG→PDF, etc.).
 The render size is set explicitly (`width`), so it's the same on any monitor.
+
+## Batch → single PDF (list page)
+
+On `/app/teacher/data/logs` each row gets a **Sel checkbox** (plus select-all
+in the header) and a floating bar appears once rows are selected:
+
+1. Tick the rows you want (all on the current page — URLs change instantly,
+   no page reloads).
+2. Click **⤓ PDF (N)**.
+3. The extension walks the selection with in-tab Angular routing:
+   click View → wait for the card → rasterize (2×) → `history.back()` → next.
+   A progress overlay shows `Capturing k / N` with a Cancel button
+   (canceling mid-way still yields a partial PDF).
+4. Everything is assembled **locally into one A4 PDF** (bundled jsPDF):
+   cover page (count, date, students, correct/incorrect tally, skipped
+   rows if any), then one card per page (aspect-fit, nearly full-bleed),
+   footer `Page i / N`. Saved as `DeltaMath_Batch_<date>.pdf`.
+
+Nothing is uploaded — a deliberate contrast to online PNG→PDF converters,
+which would otherwise receive student work.
+
+v1 caveats: selection applies to the **current page only** (default 100/page
+view), and if the underlying list state changes mid-batch the run stops early
+with a notice rather than capturing the wrong rows.
 
 ## Filenames
 
@@ -96,10 +123,11 @@ powershell -ExecutionPolicy Bypass -File scripts\make-icons.ps1
 ## Project layout
 
 ```
-manifest.json         # MV3 manifest; content script on deltamath student-logs
-content.js            # card detection, button injection, capture + clipboard/download
-ui.css                # button glue styles + toasts
+manifest.json         # MV3 manifest; content script on deltamath teacher app
+content.js            # card detection, Copy/PNG buttons, capture + clipboard/download
+batch.js              # list-page selection UI, SPA batch loop, single-PDF assembly
 vendor/snapdom.js     # SnapDOM 3.7.0 (MIT) bundled build; exposes window.snapdom
+vendor/jspdf.umd.min.js # jsPDF 2.5.2 (MIT) bundled build; exposes window.jspdf
 icons/                # generated store + toolbar icons
 scripts/make-icons.ps1
 ```
