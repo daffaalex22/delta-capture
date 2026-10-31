@@ -35,6 +35,7 @@
   let running = false;
   let aborted = false;
   let lastRowsSignature = ''; // clears the selection if the visible rows change
+  let batchRecipe = null;     // view state to re-apply between cards
 
   /* -------------------------------------------------------------- helpers */
 
@@ -297,14 +298,85 @@
     }
   }
 
-  /** history.back() then wait for the list table (with rows) again. */
-  async function returnToList(timeoutMs = 10000) {
+  /** Fire DOM events the way Angular forms listen for them. */
+  function fire(el, type) {
+    try { el.dispatchEvent(new Event(type, { bubbles: true })); } catch (err) { /* ignore */ }
+  }
+  function fireKeyUp(el) {
+    try {
+      el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a', keyCode: 65, which: 65 }));
+    } catch (err) { fire(el, 'keyup'); }
+  }
+
+  /** Current active pagination page number (ngb-style pagination widget). */
+  function activePage() {
+    const li = document.querySelector('log-rows ul.pagination li.page-item.active');
+    if (!li) return 1;
+    const n = parseInt((li.textContent || '').trim(), 10);
+    return isNaN(n) ? 1 : n;
+  }
+
+  /** Re-apply the view the batch started with: per-page select, header search
+   *  filters and the active page. DeltaMath resets all of those when the SPA
+   *  route returns, so without this every card after the first would see the
+   *  UNfiltered list. */
+  async function restoreListState() {
+    const r = batchRecipe;
+    if (!r) return;
+
+    const sel = document.querySelector('log-rows .assignment-view-tools select.form-control');
+    if (sel && String(sel.value) !== String(r.perPage)) {
+      sel.value = String(r.perPage);
+      fire(sel, 'input');
+      fire(sel, 'change');
+      await sleep(500);
+    }
+
+    const applySearch = async (input, value) => {
+      if (!input || input.value === String(value)) return;
+      input.value = String(value);
+      fire(input, 'input');
+      fire(input, 'change');
+      fireKeyUp(input);
+      await sleep(280);
+    };
+    await applySearch(document.querySelector(TABLE_SEL + ' input[name="search-name"]'), r.student);
+    await applySearch(document.querySelector(TABLE_SEL + ' input[name="search-assignment"]'), r.assignment);
+
+    if (activePage() !== r.page) {
+      const lis = [...document.querySelectorAll('log-rows ul.pagination li.page-item')];
+      const target = lis.find((li) => {
+        const link = li.querySelector('.page-link') || li.querySelector('a') || li.querySelector('button') || li;
+        const t = (link.textContent || '').trim();
+        return /^\d+$/.test(t) && parseInt(t, 10) === r.page;
+      });
+      const link = target && (target.querySelector('.page-link') || target.querySelector('a') ||
+                              target.querySelector('button') || target);
+      if (link) {
+        link.click();
+        await sleep(650);
+      }
+    }
+  }
+
+  /** history.back() then wait for the list table, and restore the batch's
+   *  view state (filters/select/page) before proceeding. */
+  async function returnToList(timeoutMs = 16000) {
     history.back();
     try {
       await waitFor(() =>
         location.pathname.startsWith(LIST_PATH) &&
         !!document.querySelector(TABLE_SEL) &&
         dataRows().length > 0, timeoutMs, 'the list table');
+      await sleep(250); // let the first render settle
+      try {
+        await restoreListState();
+      } catch (err) {
+        console.error('[DeltaCapture-batch] restore failed:', err);
+      }
+      await waitFor(() =>
+        !batchRecipe || rowsSignature() === batchRecipe.rowsSig,
+        9000, 'the original filtered rows');
       return true;
     } catch (err) {
       return false;
@@ -387,7 +459,14 @@
     running = true;
     aborted = false;
 
-    const startRows = rowsSignature();
+    const perPageSel = document.querySelector('log-rows .assignment-view-tools select.form-control');
+    batchRecipe = {
+      perPage: perPageSel ? perPageSel.value : '100',
+      student: (document.querySelector(TABLE_SEL + ' input[name="search-name"]') || {}).value || '',
+      assignment: (document.querySelector(TABLE_SEL + ' input[name="search-assignment"]') || {}).value || '',
+      page: activePage(),
+      rowsSig: rowsSignature(),
+    };
     const pages = [];
     const failures = [];
     const students = new Set();
@@ -475,14 +554,12 @@
         else if (res === 'WRONG') wrongCount++;
 
         if (!aborted && k < indices.length - 1) {
-          // No need to go back after the final capture.
+          // No need to go back after the final capture. The restore inside
+          // returnToList re-applies per-page/search/page so the filtered
+          // view the batch started with is always what we come back to.
           const back = await returnToList();
           if (!back) {
-            failures.push(`could not return to the list after row ${rowIndex + 1}`);
-            break;
-          }
-          if (rowsSignature() !== startRows) {
-            toastBatch('List state changed mid-batch — stopping early.', false);
+            failures.push(`could not return to the (filtered) list after row ${rowIndex + 1}`);
             break;
           }
         }
@@ -550,9 +627,9 @@
     const sig = rowsSignature();
     if (sig !== lastRowsSignature) {
       // The visible rows changed (page/filter/sort) — v1 selection is per page.
-      if (lastRowsSignature && selected.size) {
-        // Only clear when it really is a different set of rows, not our own
-        // interruption loop (returning from a card keeps the same signature).
+      // While a batch is running the restore loop legitimately re-renders the
+      // list; never wipe the in-flight selection there.
+      if (lastRowsSignature && selected.size && !running) {
         selected.clear();
       }
       lastRowsSignature = sig;

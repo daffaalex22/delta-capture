@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DeltaCapture",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "One-click PNG / clipboard capture of DeltaMath teacher problem-log cards (student, skill, result, problem, explanation). 100% local - no data leaves the browser.",
   "content_scripts": [
     {

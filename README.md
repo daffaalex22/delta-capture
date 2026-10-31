@@ -46,11 +46,12 @@ in the header) and a floating bar appears once rows are selected:
 Nothing is uploaded — a deliberate contrast to online PNG→PDF converters,
 which would otherwise receive student work.
 
-v1 caveats: selection applies to the **current page only** (default 100/page
-view), and if the underlying list state changes mid-batch the run stops early
-with a notice rather than capturing the wrong rows. Individual card timeouts
-are retried automatically; anything still failing is skipped and reported in
-the final toast (and on the PDF cover page).
+v1 caveats: selection applies to the **current page only** — but the view you
+started the batch with (student/assignment search filters, per-page size,
+active page) is **re-applied after every card**, so filtered batches run to
+completion. Individual card timeouts are retried automatically; anything
+still failing is skipped and reported in the final toast (and on the PDF
+cover page).
 
 ## Filenames
 
