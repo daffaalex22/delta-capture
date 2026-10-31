@@ -48,7 +48,9 @@ which would otherwise receive student work.
 
 v1 caveats: selection applies to the **current page only** (default 100/page
 view), and if the underlying list state changes mid-batch the run stops early
-with a notice rather than capturing the wrong rows.
+with a notice rather than capturing the wrong rows. Individual card timeouts
+are retried automatically; anything still failing is skipped and reported in
+the final toast (and on the PDF cover page).
 
 ## Filenames
 

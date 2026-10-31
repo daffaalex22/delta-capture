@@ -88,15 +88,27 @@
   const isRed = (c) => !!c && c.r >= 150 && c.r > c.g + 50 && c.r > c.b + 50;
   const isGreen = (c) => !!c && c.g >= 110 && c.g > c.r + 30 && c.g > c.b + 30;
 
+  function toastStack() {
+    let c = document.getElementById('deltacapture-toasts');
+    if (!c) {
+      c = document.createElement('div');
+      c.id = 'deltacapture-toasts';
+      document.documentElement.appendChild(c);
+    }
+    return c;
+  }
+
   function toast(msg, ok = true) {
     const t = document.createElement('div');
     t.className = 'deltacapture-toast' + (ok ? '' : ' deltacapture-toast--error');
     t.textContent = msg;
-    document.documentElement.appendChild(t);
+    const stack = toastStack();
+    stack.appendChild(t);
+    while (stack.children.length > 3) stack.firstChild.remove();
     setTimeout(() => {
       t.classList.add('deltacapture-toast--out');
       setTimeout(() => t.remove(), 260);
-    }, 2100);
+    }, ok ? 2400 : 4500); // errors linger so they're actually readable
   }
 
   // ------------------------------------------------------------ card finder

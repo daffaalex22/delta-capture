@@ -416,9 +416,32 @@
         }
 
         overlayUpdate(k + 1, indices.length, 'clicking View…');
-        btn.click();
+        // Click with retry: Angular can re-render the row right around our
+        // click, leaving the button detached (click silently no-ops).
+        // Re-query a fresh row/button and retry if the route never left.
+        let routed = false;
+        for (let attempt = 1; attempt <= 3 && !aborted; attempt++) {
+          const fresh = attempt === 1 ? row : dataRowAt(rowIndex);
+          const vBtn = fresh && viewButtonOf(fresh);
+          if (!vBtn) break;
+          overlayUpdate(k + 1, indices.length,
+            attempt > 1 ? `clicking View (retry ${attempt})…` : 'clicking View…');
+          vBtn.click();
+          const t0 = Date.now();
+          while (Date.now() - t0 < 2600) {
+            if (!location.pathname.startsWith(LIST_PATH)) { routed = true; break; }
+            await sleep(100);
+          }
+          if (routed) break;
+          await sleep(350); // let a re-render finish, then click fresh nodes
+        }
+        if (!routed) {
+          await returnToList();
+          failures.push(`row ${rowIndex + 1}: card never rendered`);
+          continue;
+        }
 
-        const card = await waitForCard(14000);
+        const card = await waitForCard(12000);
         if (!card) {
           await returnToList();
           failures.push(`row ${rowIndex + 1}: card never rendered`);
@@ -433,9 +456,16 @@
         try {
           canvas = await API.rasterizeCard(card, BATCH_SCALE);
         } catch (err) {
-          await returnToList();
-          failures.push(`row ${rowIndex + 1}: capture failed (${err && err.message})`);
-          continue;
+          // First render passes occasionally fail before fonts are cached;
+          // SnapDOM caches them after one pass, so an immediate retry clears.
+          await sleep(700);
+          try {
+            canvas = await API.rasterizeCard(card, BATCH_SCALE);
+          } catch (err2) {
+            await returnToList();
+            failures.push(`row ${rowIndex + 1}: capture failed (${err2 && err2.message})`);
+            continue;
+          }
         }
 
         pages.push({ canvas, meta: lines });
@@ -462,10 +492,6 @@
       failures.push('unexpected error: ' + (err && err.message));
     }
 
-    if (pages.length && (aborted || failures.length)) {
-      toastBatch(`Stopped — continuing with the ${pages.length} captured card${pages.length === 1 ? '' : 's'}.`, false);
-      aborted = false; // treat as a (partial) succeeded batch below
-    }
     if (!pages.length) {
       overlay('hide');
       running = false;
@@ -486,8 +512,18 @@
         filename: stampFilename(),
       });
       selected.clear();
-      toastBatch(`PDF saved — ${pages.length} card${pages.length === 1 ? '' : 's'} in one document.` +
-        (failures.length ? ` Skipped: ${failures.length}.` : ''));
+      // ONE consolidated outcome message — never two competing toasts.
+      let summary;
+      if (aborted) {
+        summary = `PDF built from ${pages.length} of ${indices.length} selected — stopped by Cancel.`;
+      } else if (failures.length) {
+        const det = failures.slice(0, 2).join('; ') +
+          (failures.length > 2 ? ` …and ${failures.length - 2} more (full list on the PDF cover)` : '');
+        summary = `PDF built with ${pages.length} cards; ${failures.length} skipped — ${det}`;
+      } else {
+        summary = `PDF saved — ${pages.length} card${pages.length === 1 ? '' : 's'} in one document.`;
+      }
+      toastBatch(summary, !(aborted || failures.length));
     } catch (err) {
       console.error('[DeltaCapture-batch] PDF failed:', err);
       toastBatch('PDF build failed: ' + (err && err.message), false);
