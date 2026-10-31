@@ -117,7 +117,6 @@
       updateBar();
     });
     th.appendChild(all);
-    th.appendChild(document.createTextNode('Sel'));
     headerTr.insertBefore(th, headerTr.firstChild);
   }
 
