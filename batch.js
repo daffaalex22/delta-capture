@@ -316,10 +316,65 @@
     return isNaN(n) ? 1 : n;
   }
 
+  /** Click the active suggestion in the search typeahead after we re-fill it.
+   *  DeltaMath's student/assignment search only FILTERS once a suggestion is
+   *  chosen — setting the input value merely opens the list (see the dark
+   *  bubble under the input). Tries known typeahead markups, role="option",
+   *  an exact-text fallback outside the table, then Enter-to-accept. */
+  async function chooseTypeahead(input, value) {
+    const sels = [
+      'ngb-typeahead-window li.active button',
+      'ngb-typeahead-window li.active a',
+      'ngb-typeahead-window li button',
+      'ngb-typeahead-window li a',
+      '[role="option"]',
+      '.dropdown-menu.show li.active button',
+      '.dropdown-menu.show li.active a',
+      '.dropdown-menu.show li button',
+      '.dropdown-menu.show li a',
+      '.dropdown-menu.show li.active',
+      '.dropdown-menu.show li',
+      'ul.typeahead li.active',
+      'ul.typeahead li',
+    ];
+    const target = String(value);
+    const t0 = Date.now();
+    for (;;) {
+      for (const sel of sels) {
+        const el = document.querySelector(sel);
+        if (el && el.getBoundingClientRect().height > 0 &&
+            !el.closest(TABLE_SEL) && !el.closest('[id^="deltacapture"]')) {
+          el.click();
+          return true;
+        }
+      }
+      // Generic fallback: any visible list-item/button whose whole text IS the
+      // query, but which does NOT live inside the logs table.
+      const exact = [...document.querySelectorAll('li, button, a')]
+        .filter((el) => !el.closest(TABLE_SEL) && !el.closest('[id^="deltacapture"]') &&
+                        el.getBoundingClientRect().height > 0)
+        .find((el) => (el.textContent || '').replace(/\s+/g, ' ').trim() === target);
+      if (exact) {
+        exact.click();
+        return true;
+      }
+      if (Date.now() - t0 > 3200) break;
+      await sleep(150);
+    }
+    // Last resort: accept the active suggestion with Enter.
+    try {
+      input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', keyCode: 13, which: 13 }));
+      input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter', keyCode: 13, which: 13 }));
+    } catch (err) {
+      fireKeyUp(input);
+    }
+    await sleep(350);
+    return false;
+  }
+
   /** Re-apply the view the batch started with: per-page select, header search
-   *  filters and the active page. DeltaMath resets all of those when the SPA
-   *  route returns, so without this every card after the first would see the
-   *  UNfiltered list. */
+   *  filters (including typeahead suggestion click) and the active page.
+   *  DeltaMath resets all of those when the SPA route returns. */
   async function restoreListState() {
     const r = batchRecipe;
     if (!r) return;
@@ -332,18 +387,38 @@
       await sleep(500);
     }
 
+    if (rowsSignature() === r.rowsSig) return; // view already right — nothing to do
+
     const applySearch = async (input, value) => {
-      if (!input || input.value === String(value)) return;
-      input.value = String(value);
-      fire(input, 'input');
-      fire(input, 'change');
-      fireKeyUp(input);
-      await sleep(280);
+      if (!input) return;
+      value = String(value);
+      if (!value) {
+        // Recipe has no filter here — clear our stale text if present.
+        if (input.value !== '') {
+          input.value = '';
+          fire(input, 'input');
+          fire(input, 'change');
+          await sleep(250);
+        }
+        return;
+      }
+      if (input.value !== value) {
+        input.value = value;
+        try { input.focus(); } catch (err) { /* ignore */ }
+        fire(input, 'input');
+        fire(input, 'change');
+        fireKeyUp(input);
+        await sleep(500); // let the typeahead suggestion window open
+      }
+      if (rowsSignature() !== r.rowsSig) {
+        await chooseTypeahead(input, value);
+        await sleep(400);
+      }
     };
     await applySearch(document.querySelector(TABLE_SEL + ' input[name="search-name"]'), r.student);
     await applySearch(document.querySelector(TABLE_SEL + ' input[name="search-assignment"]'), r.assignment);
 
-    if (activePage() !== r.page) {
+    if (rowsSignature() !== r.rowsSig && activePage() !== r.page) {
       const lis = [...document.querySelectorAll('log-rows ul.pagination li.page-item')];
       const target = lis.find((li) => {
         const link = li.querySelector('.page-link') || li.querySelector('a') || li.querySelector('button') || li;
@@ -379,6 +454,16 @@
         9000, 'the original filtered rows');
       return true;
     } catch (err) {
+      if (batchRecipe) {
+        const nameIn = document.querySelector(TABLE_SEL + ' input[name="search-name"]');
+        const asgIn = document.querySelector(TABLE_SEL + ' input[name="search-assignment"]');
+        console.error('[DeltaCapture-batch] restore verify failed:', {
+          expectedRows: batchRecipe.rowsSig,
+          gotRows: rowsSignature(),
+          studentInputValue: nameIn && nameIn.value,
+          assignmentInputValue: asgIn && asgIn.value,
+        });
+      }
       return false;
     }
   }
